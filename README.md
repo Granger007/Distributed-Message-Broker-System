@@ -107,32 +107,3 @@ All configuration is read from environment variables with local-dev defaults:
 python -m pytest tests/ -v                      # Linux/macOS
 ```
 
-## Known Limitations
-
-### Duplicate messages on retry after REPLICATION_FAILED
-
-When a producer receives a `503 REPLICATION_FAILED` response, it retries the same
-produce call. However, a `503` means the **leader appended the entry to its local log
-but failed to get a follower ACK** — the leader does not roll back the local append.
-If the leader is still alive and the retry reaches it again (or reaches a newly elected
-leader that replicated the entry in a lag window), the same logical message may be
-written twice, resulting in a duplicate at different offsets.
-
-**How to fix it:** Assign each logical message a client-generated UUID (an
-*idempotency key*) before sending. The broker maintains a short dedup window — a
-bounded in-memory set (or a Redis hash with TTL) of recently seen idempotency keys.
-On arrival, if the key is already in the window, the broker skips the append and
-returns the original offset as if it had succeeded. The window only needs to cover
-the retry window (e.g., 30 seconds), so memory overhead is negligible. This is the
-same pattern used by Kafka's idempotent producer (PID + sequence number) and AWS SQS
-deduplication IDs.
-
-## Roadmap
-
-- [x] **Phase 0** — Project scaffold, models, config, log store, `/health`
-- [x] **Phase 1** — Redis-lease leader election & automatic failover
-- [x] **Phase 2** — Produce endpoint, synchronous leader→follower replication, HWM
-- [x] **Phase 3** — Symmetric broker (same binary, role from env), hardened election
-- [x] **Phase 4** — Producer CLI with leader discovery & intelligent retry
-- [x] **Phase 5** — Consumer CLI with offset tracking & follow mode
-- [x] **Phase 6** — Failover demo scripts & architecture documentation
